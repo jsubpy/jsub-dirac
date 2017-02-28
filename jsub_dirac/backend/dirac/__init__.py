@@ -1,75 +1,68 @@
+import os
+import logging
 import tarfile
 
 from jsub.error import BackendNotFoundError
 
 from jsub.mixin.backend.common import Common
 
+
+try:
+    from DIRAC.Core.Base import Script
+    Script.initialize(ignoreErrors=True)
+    from DIRAC.Interfaces.API.Dirac import Dirac as DiracClient
+    from DIRAC.Interfaces.API.Job import Job as DiracJob
+except ImportError as e:
+    raise BackendNotFoundError('DIRAC client not properly setup: %s' % e)
+
+
 class Dirac(Common):
     def __init__(self, param):
-        self.__initialize_dirac()
-
         self._param = param
 
         self._logger = logging.getLogger('JSUB')
 
-        self.initialize_common_param()
-        self._foreground = param.get('foreground', False)
-        self._max_submit = param.get('max_submit', 4)
+        self.__site = param.get('site', [])
+        self.__banned_site = param.get('site', [])
 
-    def __initialize_dirac(self):
-        try:
-            from DIRAC.Core.Base import Script
-            Script.initialize(ignoreErrors=True)
-            from DIRAC.Interfaces.API.Dirac import Dirac as DiracClient
-            from DIRAC.Interfaces.API.Job import Job as DiracJob
-        except ImportError as e:
-            raise BackendNotFoundError('DIRAC client not properly setup: %s' % e)
+        self.initialize_common_param()
 
     def property(self):
         return {'run_on': 'remote'}
 
     def __pack_main_root(self, main_root_dir, pack_path):
         with tarfile.open(pack_path, 'w:gz') as tar:
-            tar.add(main_root_dir)
+            tar.add(main_root_dir, arcname='main')
 
-    def submit(self, task_id, sub_ids, launcher_exe):
+    def submit(self, task_id, sub_ids, launcher_param):
         work_root = self.get_work_root(task_id)
 
         main_root_dir = os.path.join(work_root, 'main')
-        main_pack_file = os.path.join(work_root, 'jsub_main_root.tar.gz')
-        self.__pack_work_dir(main_root_dir, main_pack_file)
+        main_pack_file = os.path.join(work_root, launcher_param['main_pack_file'])
+        self.__pack_main_root(main_root_dir, main_pack_file)
 
-        return {}
-#        input_sandbox()
-#        output_sandbox()
-#        site()
+        launcher_exe = launcher_param['executable']
+        launcher_path = os.path.join(work_root, launcher_exe)
 
-        processes = {}
+        str_sub_ids = [str(sub_id) for sub_id in sub_ids]
 
-        count = 0
-        for sub_id in sub_ids:
-            if count >= self._max_submit:
-                break
+        j = DiracJob()
+        j.setName('jsub')
+        j.setExecutable(launcher_exe)
+        j.setParameterSequence('JobName', str_sub_ids, addToWorkflow=True)
+        j.setParameterSequence('arguments', str_sub_ids, addToWorkflow=True)
+        j.setInputSandbox([launcher_path, main_pack_file])
+        j.setOutputSandbox(['jsub_log.tar.gz'])
 
-            try:
-                launcher = os.path.join(self.work_root(task_id), launcher_exe)
-                FNULL = open(os.devnull, 'w')
-                process = subprocess.Popen([launcher, str(sub_id)], stdout=FNULL, stderr=subprocess.STDOUT)
-                start_time = _process_start_time(process.pid)
-            except OSError as e:
-                self._logger.error('Submit job (%s.%s) to "local" failed: %s' % (task_id, sub_id, e))
-                continue
+        if self.__site:
+            j.setDestination(self.__site)
+        if self.__banned_site:
+            j.setBannedSites(self.__banned_site)
 
-            count += 1
-            processes[sub_id] = {}
-            processes[sub_id]['process'] = process
-            processes[sub_id]['start_time'] = start_time
+        dirac = DiracClient()
+        result = dirac.submit(j)
 
-        if self._foreground:
-            for _, data in processes.items():
-                data['process'].wait()
-
-        result = {}
-        for sub_id, data in processes.items():
-            result[sub_id] = '%s_%s' % (data['start_time'], data['process'].pid)
-        return result
+        final_result = {}
+        for sub_id, dirac_id in zip(sub_ids, result['Value']):
+            final_result[sub_id] = dirac_id
+        return final_result
