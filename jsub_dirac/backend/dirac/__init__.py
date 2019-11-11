@@ -1,4 +1,6 @@
 import os
+import subprocess
+import json
 import logging
 import tarfile
 
@@ -6,14 +8,9 @@ from jsub.error import BackendNotFoundError
 
 from jsub.mixin.backend.common import Common
 
+from jsub.util import ensure_list
 
-try:
-    from DIRAC.Core.Base import Script
-    Script.initialize(ignoreErrors=True)
-    from DIRAC.Interfaces.API.Dirac import Dirac as DiracClient
-    from DIRAC.Interfaces.API.Job import Job as DiracJob
-except ImportError as e:
-    raise BackendNotFoundError('DIRAC client not properly setup: %s' % e)
+DIRAC_BACKEND_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
 class Dirac(Common):
@@ -22,8 +19,8 @@ class Dirac(Common):
 
         self._logger = logging.getLogger('JSUB')
 
-        self.__site = param.get('site', [])
-        self.__banned_site = param.get('site', [])
+        self.__site = ensure_list(param.get('site', []))
+        self.__banned_site = ensure_list(param.get('banned_site', []))
 
         self.initialize_common_param()
 
@@ -38,7 +35,8 @@ class Dirac(Common):
         work_root = self.get_work_root(task_id)
 
         main_root_dir = os.path.join(work_root, 'main')
-        main_pack_file = os.path.join(work_root, launcher_param['main_pack_file'])
+        main_pack_file = os.path.join(
+            work_root, launcher_param['main_pack_file'])
         self.__pack_main_root(main_root_dir, main_pack_file)
 
         launcher_exe = launcher_param['executable']
@@ -46,23 +44,21 @@ class Dirac(Common):
 
         str_sub_ids = [str(sub_id) for sub_id in sub_ids]
 
-        j = DiracJob()
-        j.setName('jsub')
-        j.setExecutable(launcher_exe)
-        j.setParameterSequence('JobName', str_sub_ids, addToWorkflow=True)
-        j.setParameterSequence('arguments', str_sub_ids, addToWorkflow=True)
-        j.setInputSandbox([launcher_path, main_pack_file])
-        j.setOutputSandbox(['jsub_log.tar.gz'])
+        cmd = [os.path.join(DIRAC_BACKEND_DIR, 'script', 'dirac-run.sh')]
+        cmd += ['submit']
+        cmd += ['--name', 'jsub']
+        cmd += ['--job-group', 'jsub-'+str(task_id)]
+        cmd += ['--sub-ids', ','.join(str_sub_ids)]
+        cmd += ['--input-sandbox', '%s,%s' % (launcher_path, main_pack_file)]
+        cmd += ['--output-sandbox', 'jsub_log.tar.gz']
+        cmd += ['--executable', launcher_exe]
+        cmd += ['--site', ','.join(self.__site)]
+        cmd += ['--banned-site', ','.join(self.__banned_site)]
 
-        if self.__site:
-            j.setDestination(self.__site)
-        if self.__banned_site:
-            j.setBannedSites(self.__banned_site)
+        try:
+            output = subprocess.check_output(cmd)
+        except subprocess.CalledProcessError as e:
+            self._logger.error('Submit job to DIRAC failed: %s' % e)
+            return
 
-        dirac = DiracClient()
-        result = dirac.submit(j)
-
-        final_result = {}
-        for sub_id, dirac_id in zip(sub_ids, result['Value']):
-            final_result[sub_id] = dirac_id
-        return final_result
+        return json.loads(output)
