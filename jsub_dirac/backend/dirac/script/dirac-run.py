@@ -12,6 +12,7 @@ except ImportError as e:
 Script.setUsageMessage('Run DIRAC sub command')
 Script.registerSwitch('', 'name=', 'Job name')
 Script.registerSwitch('', 'job-group=', 'Job group')
+Script.registerSwitch('', 'task-id=', 'Task id')
 Script.registerSwitch('', 'sub-ids=', 'Job sub id list')
 Script.registerSwitch('', 'input-sandbox=', 'Input sandbox')
 Script.registerSwitch('', 'output-sandbox=', 'Output sandbox')
@@ -24,8 +25,8 @@ from DIRAC.Interfaces.API.Dirac import Dirac
 from DIRAC.Interfaces.API.Job import Job
 
 
-def submit(name, job_group, sub_ids, input_sandbox, output_sandbox, executable, site=None, banned_site=None):
-    job_names = [name + '-' + sub_id for sub_id in sub_ids]
+def submit(name, job_group, task_id, sub_ids, input_sandbox, output_sandbox, executable, site=None, banned_site=None):
+    job_names = ['%s-jsub.%s.%s' % (name, task_id, sub_id) for sub_id in sub_ids]
 
     j = Job()
     j.setName(name)
@@ -68,6 +69,7 @@ def main():
 
     name = 'jsub'
     job_group = 'jsub-job'
+    task_id = 0
     sub_ids = []
     input_sandbox = []
     output_sandbox = []
@@ -80,6 +82,8 @@ def main():
             name = v
         elif k == 'job-group':
             job_group = v
+        elif k == 'task-id':
+            task_id = v
         elif k == 'sub-ids':
             sub_ids = getListArg(v)
         elif k == 'input-sandbox':
@@ -94,7 +98,7 @@ def main():
             banned_site = getListArg(v)
 
     if args[0] == 'submit':
-        result = submit(name, job_group, sub_ids,
+        result = submit(name, job_group, task_id, sub_ids,
                         input_sandbox, output_sandbox, executable, site, banned_site)
         print(json.dumps(result))
 
