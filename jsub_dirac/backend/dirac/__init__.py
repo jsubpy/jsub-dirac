@@ -25,7 +25,7 @@ class Dirac(Common):
         self.initialize_common_param()
 
     def property(self):
-        return {'run_on': 'remote'}
+        return {'run_on': 'remote','name':'dirac'}
 
     def __pack_main_root(self, main_root_dir, pack_path):
         with tarfile.open(pack_path, 'w:gz') as tar:
@@ -51,7 +51,7 @@ class Dirac(Common):
         cmd += ['--task-id', str(task_id)]
         cmd += ['--sub-ids', ','.join(str_sub_ids)]
         cmd += ['--input-sandbox', '%s,%s' % (launcher_path, main_pack_file)]
-        cmd += ['--output-sandbox', 'jsub_log.tar.gz']
+        cmd += ['--output-sandbox', '{jsub_log.tar.gz, jsub.out}']
         cmd += ['--executable', launcher_exe]
         cmd += ['--site', ','.join(self.__site)]
         cmd += ['--banned-site', ','.join(self.__banned_site)]
@@ -61,5 +61,4 @@ class Dirac(Common):
         except subprocess.CalledProcessError as e:
             self._logger.error('Submit job to DIRAC failed: %s' % e)
             return
-
         return json.loads(output)

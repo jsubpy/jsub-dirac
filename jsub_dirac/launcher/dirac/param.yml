@@ -1,2 +1,2 @@
-executable: dl.sh
+executable: dirac_launcher.sh
 main_pack_file: jsub_main_root.tar.gz
