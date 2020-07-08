@@ -1,5 +1,11 @@
 #!/usr/bin/env python
 
+'''
+This action module downloads files to the worknode.
+	-accept LFNs of files in DFC or local files registered and uploaded to DFC
+	-move file to destination (specified by folder or filename).
+'''
+
 import itertools
 import sys
 import os
@@ -40,12 +46,16 @@ def input_path_to_lfn(input_path):
 def main():
     input_file_jobvar_name='JSUB_'+os.environ.get('JSUB_input_file_jobvar_name','input_file') # if input file is local, and put to DFC through jsub register.
     input_lfn_jobvar_name='JSUB_'+os.environ.get('JSUB_input_lfn_jobvar_name','input_lfn') # if input file is directly from DFC
+	source_lfn_prefix=os.environ.get('JSUB_source_lfn_prefix')
     input_path=os.environ.get(input_file_jobvar_name)
     input_lfn=os.environ.get(input_lfn_jobvar_name)
-    destination=os.environ.get('JSUB_destination','../')
+    destination=os.environ.get('JSUB_destination','./')
 
 	if input_lfn is None:
-    	lfn=input_path_to_lfn(input_path)
+		if source_lfn_prefix:
+			lfn = os.path.join(source_lfn_prefix,input_path)
+		else:
+    		lfn = input_path_to_lfn(input_path)
 	else:
 		lfn=input_lfn
     fname=os.path.basename(lfn)
@@ -53,7 +63,7 @@ def main():
 
 #    gfal_prefix = 'srm://storm.ihep.ac.cn:8444'
 #    gfal_path = gfal_prefix + input_path
-#    dest_dir = os.environ.get('destination_dir','../')
+#    dest_dir = os.environ.get('destination_dir','./')
 #    dest_filename = dest_dir + os.path.basename(input_path)
 #    os.system('gfal-copy {} {}'.format(gfal_path,dest_filename))  #replace the input file
 
@@ -65,8 +75,8 @@ def main():
         gLogger.error('Download file error: %s' % result['Message'])
         return 2
 
-    # cp to destination
-    os.system('cp %s %s'%(fname, destination))
+    # mv to destination
+    os.system('mv %s %s'%(fname, destination))
 
     return 0
 
