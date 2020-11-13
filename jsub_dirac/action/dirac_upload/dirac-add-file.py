@@ -32,7 +32,10 @@ def getUserHome():
 def main():
 	source_location=os.environ.get('JSUB_source_location','./')
 	destination_dir=os.environ.get('JSUB_destination_dir','')
-	destination_in_user_home=os.environ.get('JSUB_user_home','True')	#if true: relative path to cefs user home for upload destination; if false: absolute path
+	destination_dir_jobvar=os.environ.get('JSUB_dirac_upload_destination_dir_jobvar')	# allow using $(jobvar) when defining path
+	if destination_dir_jobvar is not None:	
+		destination_dir = destination_dir_jobvar
+	destination_in_user_home=(os.environ.get('JSUB_user_home',"True").upper() == "TRUE")	#if true: relative path to cefs user home for upload destination; if false: absolute path
 	files_to_upload=os.environ.get('JSUB_files_to_upload','*')
 	overwrite=(os.environ.get('JSUB_overwrite','False').upper() == 'TRUE')
 	upload_file_jobvar=os.environ.get('JSUB_upload_file_jobvar')
@@ -42,12 +45,13 @@ def main():
 
 
 	# if upload_file_jobvar exists, need to reshape output setting to a standard one
-	if upload_file_jobvar!=None:
+	if upload_file_jobvar is not None:
 		if relocate_to_cwd:		#value of jobvar doesn't reflect dir name; file is under cwd instead
 			upfile=os.environ.get('JSUB_'+upload_file_jobvar)
 			source_location='./'
 			files_to_upload=os.path.basename(upfile)
-			destination_dir=os.path.dirname(upfile)
+			if destination_in_user_home:
+				destination_dir=os.path.dirname(upfile)
 		else:
 			files_to_upload=os.environ.get('JSUB_'+upload_file_jobvar)
 #			destination_dir=os.path.dirname(upfile)
@@ -60,9 +64,9 @@ def main():
 		l=glob.glob(os.path.join(source_location,f))
 		l=[os.path.relpath(x,source_location) for x in l]
 		flist+=l
+	flist=list(set(flist))	# remove repeated items
 
 	userHome = getUserHome()
-	
 
 
 	if not userHome:

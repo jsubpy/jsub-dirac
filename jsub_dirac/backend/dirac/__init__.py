@@ -18,11 +18,14 @@ class Dirac(Common):
 		self._param = param
 		self._logger = logging.getLogger('JSUB')
 
-
-		self.__site = ensure_list(param.get('site', []))
 		self.__job_group = param.get('jobGroup')
 		self.__job_name = param.get('jobName')
 		self.__banned_site = ensure_list(param.get('bannedSite', []))
+		if not self.__banned_site:
+			self.__banned_site = ensure_list(param.get('bannedSites', []))
+		self.__site = ensure_list(param.get('site', []))
+		if not self.__site:
+			self.__site = ensure_list(param.get('sites', []))
 
 		self.initialize_common_param()
 
@@ -33,10 +36,30 @@ class Dirac(Common):
 		with tarfile.open(pack_path, 'w:gz') as tar:
 			tar.add(main_root_dir, arcname='main')
 	
-	def get_log(self, task_data = None, path = './', sub_ids = []):
+	def get_log(self, task_data = None, path = './', sub_ids = [], status = [], njobs = 10):
 		getlog_result={}
 		parent_dir = os.path.realpath(path if path else '.')
-		for sid in sub_ids:
+
+		# generate sid_list from sub_ids and status filter
+		sid_list=[]
+		sid_list.extend(sub_ids)
+		if len(status)>0:
+			status_text=''.join([(s[0] if s!='Deleted' else 'K') for s in status])
+			status_result=self.status(task_data.get('backend_task_id'),status_text)
+			if status_result['OK']:
+				for s in status:
+					for jid,bid in task_data.get('backend_job_ids').items():
+						if bid in status_result['jobIDs'][s]:
+							sid_list.append(jid)
+
+		sid_list=list(set(sid_list))	#get rid of repetitive sub ids
+		if len(sid_list)> int(njobs):
+			sid_list=sid_list[:int(njobs)]
+			print('Exceeding max njobs, only output the log files of first %s jobs.'%njobs)
+
+#		print('\n')
+
+		for sid in sid_list:
 			is_ok=True
 			message=''
 			backend_job_id = task_data.get('backend_job_ids',{}).get(str(sid))
@@ -57,17 +80,17 @@ class Dirac(Common):
 						output = subprocess.check_output(cmd)
 						os.chdir(str(backend_job_id))
 						os.system('mkdir jsub_log')
-						os.system('pwd')
-						print('Unpacking log files of subjob %s:'%sid)
-						os.system('tar -xvf jsub_log.tar.gz -C jsub_log')
-						print('')
+#						os.system('pwd')
+#						print('Unpacking log files of subjob %s:'%sid)
+						os.system('tar -xvf jsub_log.tar.gz -C jsub_log > /dev/null')
+#						print('')
 						os.chdir('../')
-						os.system('mv `find . |grep launcher` ./')
-						os.system('mv `find . |grep navigator` ./')
+						os.system('mv `find ./*/ |grep launcher` ./')
+						os.system('mv `find ./*/ |grep navigator` ./')
 						os.system('rm -rf %s'%backend_job_id)
 					except:
 						is_ok = False
-						message = 'Failed to download log files from Dirac backend.'		
+						message = 'Failed to download log files from Dirac backend.'	
 			getlog_result.update({sid:{'OK':is_ok,'Message':message}})
 		return getlog_result
 
@@ -97,8 +120,8 @@ class Dirac(Common):
 		try:
 			output = subprocess.check_output(cmd)
 		except subprocess.CalledProcessError as e:
-			self._logger.error('Failed to retrieve job status: %s' % e)
-			return
+#			self._logger.error('Failed to retrieve job status: %s' % e)
+			output = {'OK':False, 'Message': 'Failed to retrieve job status %s' % e}
 
 		return json.loads(output)
 		
@@ -144,12 +167,14 @@ class Dirac(Common):
 	def submit(self, task_id,  launcher_param, sub_ids=None):
 		run_root = self.get_run_root(task_id)
 
+		username=os.environ.get('USER','')
+
 		if self.__job_group is None:
-			self.__job_group = 'jsub.%s' % task_id
+			self.__job_group = 'jsub.%s.%s' %(username,task_id)
 		else:
 			self.__job_group = self.__job_group
 		if self.__job_name is None:
-			self.__job_name = 'jsub.%s' % task_id
+			self.__job_name = 'jsub.%s.%s' % (username,task_id)
 
 		main_root_dir = os.path.join(run_root, 'main')
 		main_pack_file = os.path.join(run_root, launcher_param['main_pack_file'])

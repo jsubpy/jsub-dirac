@@ -12,7 +12,7 @@ cd $(dirname "$0")
 work_root=$(pwd)
 
 
-job_root="${work_root}/job/${task_sub_id}"
+job_root="${work_root}/subjobs/${task_sub_id}"
 
 mkdir -p "${job_root}"
 
@@ -27,12 +27,10 @@ fi
 
 bootstrap_exe=$(cat "${work_root}/main/bootstrap/executable")
 
-
-
 "${work_root}/main/bootstrap/${bootstrap_exe}" "${task_sub_id}" "${job_root}" > "${launcher_log}" 2>&1
 
-exit_code = $?
+exit_code=$?
 
 tar czf jsub_log.tar.gz "${log_root}"
 
-return exit_code
+exit $exit_code

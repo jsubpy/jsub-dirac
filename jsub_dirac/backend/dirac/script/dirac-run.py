@@ -21,7 +21,7 @@ Script.registerSwitch('', 'sub-ids=', 'Job sub id list')
 Script.registerSwitch('', 'input-sandbox=', 'Input sandbox')
 Script.registerSwitch('', 'output-sandbox=', 'Output sandbox')
 Script.registerSwitch('', 'executable=', 'Job executable')
-Script.registerSwitch('', 'site=', 'Job sites')
+Script.registerSwitch('', 'site=', 'Job destination site')
 Script.registerSwitch('', 'banned-site=', 'Job banned sites')
 # delete, reschedule
 Script.registerSwitch('', 'backend-task-id=', 'Backend task id')
@@ -101,13 +101,13 @@ def submit(name, job_group, task_id,  input_sandbox, output_sandbox, executable,
 
 		if job_group:
 			j.setJobGroup(job_group)
-		if site:
+		if site:	# set destination to a certain site; list not allowed
 			j.setDestination(site)
+		
 		if banned_site:
 			j.setBannedSites(banned_site)
 
 		result = dirac.submitJob(j)
-
 
 		if not result['OK']:
 			sys.stdout.write('DIRAC job submit error: %s\n' % result['Message'])
