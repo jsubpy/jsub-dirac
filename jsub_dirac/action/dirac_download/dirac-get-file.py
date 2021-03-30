@@ -9,6 +9,7 @@ This action module downloads files to the worknode.
 import itertools
 import sys
 import os
+import subprocess
 
 from DIRAC import S_OK, S_ERROR, gLogger, exit
 from DIRAC.Core.Base import Script
@@ -17,8 +18,10 @@ Script.parseCommandLine()
 from DIRAC.Core.Security.ProxyInfo import getProxyInfo
 from DIRAC.ConfigurationSystem.Client.Helpers.Registry import getVOForGroup
 
+import DIRAC
 from DIRAC.Interfaces.API.Dirac import Dirac
 
+from DIRAC.WorkloadManagementSystem.Client.JobReport import JobReport
 
 def input_path_to_lfn(input_path):
 
@@ -50,6 +53,8 @@ def main():
 	input_path=os.environ.get(input_file_jobvar_name)
 	input_lfn=os.environ.get(input_lfn_jobvar_name)
 	destination=os.environ.get('JSUB_destination','./')
+	use_xcache=os.environ.get('JSUB_XCache',False)
+	test_pfn=os.environ.get('JSUB_test_pfn','')
 
 	if input_lfn is None:
 		if source_lfn_prefix:
@@ -60,20 +65,48 @@ def main():
 		lfn=input_lfn
 	fname=os.path.basename(lfn)
 
-
-#	gfal_prefix = 'srm://storm.ihep.ac.cn:8444'
-#	gfal_path = gfal_prefix + input_path
-#	dest_dir = os.environ.get('destination_dir','./')
-#	dest_filename = dest_dir + os.path.basename(input_path)
-#	os.system('gfal-copy {} {}'.format(gfal_path,dest_filename))  #replace the input file
+	# send job message before downloading start
+#	jobID = os.environ.get('DIRACJOBID', '0')
+#	if jobID!='0':
+#		jobReport = JobReport(int(jobID), 'JSUB script')
+#		res_report = jobReport.setApplicationStatus("Start Downloading input data")
+#		if not res_report['OK']:
+#			gLogger.error('Failed to set dirac logging: %s' % res_report['Message'])
+	
 
 	# download the file to the action folder
-	dirac = Dirac()
-	result=dirac.getFile(lfn)
+	file_downloaded=False
+	if str(use_xcache).upper()=='True': #try to download file from xcache
+		sitename = DIRAC.siteName()
+		for XCache in gConfig.getValue( 'Resources/XCaches/%s' % ( sitename ), [] ):
+			xrdcp_url='xroot://%s/%s'%(XCache,test_pfn) 
+			fname=os.path.basename(test_pfn)
+			cmd='xrdcp %s %s'%(test_pfn,fname)
+		
+			proc = subprocess.Popen(cmd, shell=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE, timeout=3600)
+			return_code = proc.wait()
+			#proc.stdout, proc.stderr
+			if return_code==0:
+				file_downloaded=True
+
+	if not file_downloaded: #use dirac API to download file
+		dirac = Dirac()
+		result=dirac.getFile(lfn)
 	
 	if not result['OK']:
 		gLogger.error('Download file error: %s' % result['Message'])
 		return 2
+
+		
+	# send message to DIRAC after downloading finish
+#	if jobID!='0':
+#		jobReport = JobReport(int(jobID), 'JSUB script')
+#		res_report = jobReport.setApplicationStatus("Finished Downloading input data")
+#		res_repor
+#		if not res_report['OK']:
+#			gLogger.error('Failed to set dirac logging: %s' % res_report['Message'])
+
+
 
 	# mv to destination
 	os.system('mv %s %s'%(fname, destination))

@@ -22,6 +22,8 @@ class FindLfns(object):
 		try:
 			lfnlist = subprocess.check_output(cmd) #binary
 			lfnlist=(lfnlist.decode('UTF-8')).split('\n')[:-1]	#binary to str list
+			# discard first line :"Executing ..."
+			lfnlist=lfnlist[1:]
 			self.__lfns=lfnlist
 		except:
 			self.__lfns=[]

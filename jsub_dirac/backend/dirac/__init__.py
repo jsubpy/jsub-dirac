@@ -55,9 +55,10 @@ class Dirac(Common):
 		sid_list=list(set(sid_list))	#get rid of repetitive sub ids
 		if len(sid_list)> int(njobs):
 			sid_list=sid_list[:int(njobs)]
-			print('Exceeding max njobs, only output the log files of first %s jobs.'%njobs)
+			self._logger.info('Exceeding max njobs, only output the log files of first %s jobs.'%njobs)
+#		self._logger.info('ID of relevant subjobs: %s'%str(sid_list))
 
-#		print('\n')
+
 
 		for sid in sid_list:
 			is_ok=True
@@ -88,14 +89,19 @@ class Dirac(Common):
 						os.system('mv `find ./*/ |grep launcher` ./')
 						os.system('mv `find ./*/ |grep navigator` ./')
 						os.system('rm -rf %s'%backend_job_id)
-					except:
+					except subprocess.CalledProcessError as e:
+						self._logger.error('Failed to retrieve log files of subjob %s, with the following message:'%str(sid))
+						error_message=e.stdout.decode('UTF-8')
+						if len(error_message)<2:
+							error_message=None
+						print(error_message)
 						is_ok = False
 						message = 'Failed to download log files from Dirac backend.'	
 			getlog_result.update({sid:{'OK':is_ok,'Message':message}})
 		return getlog_result
 
 
-	def status(self, backend_task_id, job_status):
+	def status(self, backend_task_id, job_status, silent=False):
 		cmd = [os.path.join(DIRAC_BACKEND_DIR, 'script', 'dirac-run.sh')]
 		cmd += ['status']
 		cmd += ['--backend-task-id',str(backend_task_id)]
@@ -118,12 +124,18 @@ class Dirac(Common):
 			if str_status:	
 				cmd += ['--job-status', str_status]
 		try:
-			output = subprocess.check_output(cmd)
+			output_json = subprocess.check_output(cmd)
+			output=json.loads(output_json)
 		except subprocess.CalledProcessError as e:
-#			self._logger.error('Failed to retrieve job status: %s' % e)
+			if not silent:
+				self._logger.error('Failed to retrieve subjob statuses, script returncode=%s with the following stdout:' % e.returncode)
+				message=e.stdout.decode('UTF-8')
+				if len(message)<=1:
+					message='None'
+				print(message)
 			output = {'OK':False, 'Message': 'Failed to retrieve job status %s' % e}
 
-		return json.loads(output)
+		return output
 		
 	def delete_task(self, backend_task_id, job_status):
 		cmd = [os.path.join(DIRAC_BACKEND_DIR, 'script', 'dirac-run.sh')]
@@ -137,7 +149,7 @@ class Dirac(Common):
 			output = subprocess.check_output(cmd)
 		except subprocess.CalledProcessError as e:
 			self._logger.error('Failed to delete task on Dirac backend: %s' % e)
-			return
+			return 
 
 		return json.loads(output)
 
@@ -202,6 +214,25 @@ class Dirac(Common):
 		try:
 			output = subprocess.check_output(cmd)
 		except subprocess.CalledProcessError as e:
-			self._logger.error('Submit job to DIRAC failed: %s' % e)
+			output=e.stdout
+			returncode=e.returncode
+			self._logger.error('Submit job to DIRAC failed: submission script exited with return code %s'%str(returncode))
+			#give suggestion based on return code
+			if returncode==1:
+				self._logger.error('DIRAC environment not properly setup?')
+			elif returncode==2:
+				self._logger.error('dirac.submitJob() failed.')
+			
+
+			#printing error message
+			try:
+				message=output.decode('UTF-8')
+				if len(message)<=1:
+					message='None'
+				self._logger.error('stdout of submission script:')
+				print(message)
+			except:
+				self._logger.error('Failed to retrieve stdout of submission script.')
 			return
+
 		return json.loads(output)

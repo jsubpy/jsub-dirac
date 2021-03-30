@@ -4,48 +4,63 @@ import os
 import sys
 import json
 
+
 try:
 	from DIRAC.Core.Base import Script
 	from IHEPDIRAC.WorkloadManagementSystem.Client.TaskClient import TaskClient
 
 except ImportError as e:
-	sys.stdout.write('IHEP-DIRAC client not properly setup: %s\n' % e)
+#	sys.stdout.write('IHEP-DIRAC client not properly setup: %s\n' % e)
+	print(json.dumps({'OK':False,'Message':'IHEP-DIRAC client not properly setup: %s'}))
 	sys.exit(1)
 
-Script.setUsageMessage('Run DIRAC sub command')
-# submit
-Script.registerSwitch('', 'name=', 'Job name')
-Script.registerSwitch('', 'job-group=', 'Job group')
-Script.registerSwitch('', 'task-id=', 'Task id')
-Script.registerSwitch('', 'sub-ids=', 'Job sub id list')
-Script.registerSwitch('', 'input-sandbox=', 'Input sandbox')
-Script.registerSwitch('', 'output-sandbox=', 'Output sandbox')
-Script.registerSwitch('', 'executable=', 'Job executable')
-Script.registerSwitch('', 'site=', 'Job destination site')
-Script.registerSwitch('', 'banned-site=', 'Job banned sites')
-# delete, reschedule
-Script.registerSwitch('', 'backend-task-id=', 'Backend task id')
-Script.registerSwitch('', 'job-status=', 'List of job status to match')
-Script.registerSwitch('', 'backend-ids=', 'Dirac job id list')
-Script.parseCommandLine(ignoreErrors=False)
+try:
+	Script.setUsageMessage('Run DIRAC sub command')
+	# submit
+	Script.registerSwitch('', 'name=', 'Job name')
+	Script.registerSwitch('', 'job-group=', 'Job group')
+	Script.registerSwitch('', 'task-id=', 'Task id')
+	Script.registerSwitch('', 'sub-ids=', 'Job sub id list')
+	Script.registerSwitch('', 'input-sandbox=', 'Input sandbox')
+	Script.registerSwitch('', 'output-sandbox=', 'Output sandbox')
+	Script.registerSwitch('', 'executable=', 'Job executable')
+	Script.registerSwitch('', 'site=', 'Job destination site')
+	Script.registerSwitch('', 'banned-site=', 'Job banned sites')
+	# delete, reschedule
+	Script.registerSwitch('', 'backend-task-id=', 'Backend task id')
+	Script.registerSwitch('', 'job-status=', 'List of job status to match')
+	Script.registerSwitch('', 'backend-ids=', 'Dirac job id list')
+	Script.parseCommandLine(ignoreErrors=False)
+	
+	from DIRAC.Interfaces.API.Dirac import Dirac
+	from DIRAC.Interfaces.API.Job import Job
+	from DIRAC.Core.DISET.RPCClient import RPCClient
+	from DIRAC import gConfig,gLogger,S_ERROR,S_OK
+except:
+#	sys.stdout.write('Bad python setting for DIRAC. Try setting up DIRAC environment after activating jsub?\n')
+	print(json.dumps({'OK':False,'Message':'Bad python setting for DIRAC. Try setting up DIRAC environment after activating jsub?'}))
+	sys.exit(1)
 
-
-from DIRAC.Interfaces.API.Dirac import Dirac
-from DIRAC.Interfaces.API.Job import Job
-from DIRAC.Core.DISET.RPCClient import RPCClient
-from DIRAC import gConfig,gLogger,S_ERROR,S_OK
 
 def status(backend_task_id, job_status):
 	taskClient = TaskClient()
 	jobMonitor= RPCClient('WorkloadManagement/JobMonitoring')
 
-	if not job_status:
+	if not job_status: #print the number of jobs in each status
 		result=taskClient.getTaskProgress(backend_task_id)
 		if 'Value' in result:
 			result['njobs'] = result['Value']
+		else:
+			print(result['Message'])
+			sys.exit(2)
 		return result
-	else:
-		jobs=taskClient.getTaskJobs(backend_task_id)['Value']
+	else: #print IDs of subjobs
+		result=taskClient.getTaskJobs(backend_task_id)
+		if 'Value' in result:
+			jobs=result['Value']
+		else:
+			print(result['Message'])
+			sys.exit(3)
 		job_list={status:[] for status in job_status}
 		for job in jobs:
 			try: 
@@ -54,7 +69,10 @@ def status(backend_task_id, job_status):
 					job_list[status].append(int(job))
 			except:
 				pass
-		return {'OK':True,'jobIDs':job_list}
+		result['jobIDs']= job_list
+		return result
+
+
 
 def delete(backend_task_id,job_status):
 	taskClient = TaskClient()
@@ -80,7 +98,6 @@ def reschedule(backend_task_id, job_status, sub_ids, backend_ids):
 
 def submit(name, job_group, task_id,  input_sandbox, output_sandbox, executable, site=None, banned_site=None, sub_ids=[]):
 	dirac = Dirac()
-	
 	submit_result = {'backend_job_ids':{}}
 	jobInfos={}
 
@@ -111,7 +128,7 @@ def submit(name, job_group, task_id,  input_sandbox, output_sandbox, executable,
 
 		if not result['OK']:
 			sys.stdout.write('DIRAC job submit error: %s\n' % result['Message'])
-			sys.exit(1)
+			sys.exit(2)
 
 		for sub_id, dirac_id in zip(ids_this_run, result['Value']):
 			submit_result['backend_job_ids'][sub_id] = dirac_id
@@ -135,6 +152,7 @@ def getListArg(arg):
 def main():
 	args = Script.getPositionalArgs()
 	switches = Script.getUnprocessedSwitches()
+	
 
 	name = 'jsub'
 	job_group = 'jsub-job'
@@ -175,6 +193,7 @@ def main():
 			backend_task_id = v
 		elif k == 'job-status':
 			job_status = getListArg(v)
+
 
 	if args[0] == 'submit':
 		result = submit(name, job_group, task_id, 
