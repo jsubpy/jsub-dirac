@@ -34,6 +34,7 @@ def getUserHome():
 def main():
 	source_location=os.environ.get('JSUB_source_location','./')
 	destination_dir=os.environ.get('JSUB_destination_dir','')
+	failable_file=eval(os.environ.get('JSUB_failable_file','[]'))		# files in this list shouldn't generate error when they can't be uploaded
 	destination_dir_jobvar=os.environ.get('JSUB_dirac_upload_destination_dir_jobvar')	# allow using $(jobvar) when defining path
 	if destination_dir_jobvar is not None:	
 		destination_dir = destination_dir_jobvar
@@ -48,6 +49,13 @@ def main():
 		se='IHEP-STORM'
 	upload_status=0
 
+	ff=[]
+	for x in failable_file:
+		ff_raw=glob.glob(os.path.join(source_location,x))
+		ff_raw=[os.path.relpath(x,source_location) for x in ff_raw]
+		ff+=ff_raw
+	ff=list(set(ff))
+	
 
 	if not upload_dict:
 		# if upload_file_jobvar exists, need to reshape output setting to a standard one
@@ -83,11 +91,17 @@ def main():
 	#		res_report = jobReport.setApplicationStatus("Start Uploading")
 	#		if not res_report['OK']:
 	#			gLogger.error('Failed to set dirac logging: %s' % res_report['Message'])
-	
+
+		print("Files to upload: {0}".format(str(flist)))	
+
 		# uploading files
 		for f in flist:
 			if destination_in_user_home:
-				lfn = os.path.join(getUserHome(), destination_dir, f)
+				userHome = getUserHome()
+				if not userHome:
+					gLogger.error('Failed to get user home')
+					return 1
+				lfn = os.path.join(userHome, destination_dir, f)
 			else:
 				lfn = os.path.join(destination_dir,f)
 		
@@ -114,26 +128,32 @@ def main():
 
 	else: # upload dict is present
 		fgroups=upload_dict.keys()
+		uploaded_files=set()		# keep track to avoid repeated uploading
+		print('Uploading files to paths: {0} '.format(str(upload_dict)))
+		print('File list in current working dir:')
+		os.system('ls;echo "";')
 		for fgroup in fgroups:
 			
 			folder=upload_dict[fgroup]
-			if folder.upper() in ['COMPSTR','COMPOSITESTRING','COMPOSITE_STRING','COMPOSITE STRING']:	#{jobvar_name: 'COMPSTR'}
+			if ('COMPSTR' in folder.upper()) or ('COMPOSITE' in folder.upper()):	#{jobvar_name: 'COMPSTR'}
 				jobvar_name=fgroup		 
 				lfn=os.environ.get('JSUB_'+jobvar_name)	# get resolved jobvar value
-				f=os.path.basename(destination_LFN)					
+				f=os.path.basename(lfn)					
 
 				fcc = FileCatalogClient()
 				dm = DataManager(['FileCatalog'])
+					
 	
 				print('registering file: LFN={0}, source={1}, SE={2}'.format(lfn,os.path.join(source_location,f),se))
-				res = dm.putAndRegister(lfn, os.path.join(source_location,f), se, overwrite=overwrite)
+				if f not in uploaded_files:
+					res = dm.putAndRegister(lfn, os.path.join(source_location,f), se, overwrite=overwrite)
 				if not res['OK']:
 					gLogger.error('Failed to putAndRegister %s \nto %s \nwith message: %s' % (lfn, se, res['Message']))
 					upload_status=2
 				elif res['Value']['Failed'].has_key(lfn):
 					gLogger.error('Failed to putAndRegister %s to %s' % (lfn, se))
 					upload_status=2
-
+				uploaded_files.update([f])
 
 			
 
@@ -142,16 +162,23 @@ def main():
 				if folder.startswith('/'):
 					dirname=folder
 				else:
-					dirname=os.path.join(getUserHome(),folder)
+					userHome = getUserHome()
+					if not userHome:
+						gLogger.error('Failed to get user home')
+						return 1
+					dirname=os.path.join(userHome,folder)
 			
 				flist_raw=fgroup.split(',')
 				flist=[]
+
+
 				for f in flist_raw:
 					l=glob.glob(os.path.join(source_location,f))
 					l=[os.path.relpath(x,source_location) for x in l]
 					flist+=l
 				flist=list(set(flist))	# remove repeated items
 			
+				
 				for f in flist:
 					lfn = os.path.join(dirname,f)
 			
@@ -159,13 +186,22 @@ def main():
 					dm = DataManager(['FileCatalog'])
 			
 					print('registering file: LFN={0}, source={1}, SE={2}'.format(lfn,os.path.join(source_location,f),se))
-					res = dm.putAndRegister(lfn, os.path.join(source_location,f), se, overwrite=overwrite)
+					if f not in uploaded_files:
+						res = dm.putAndRegister(lfn, os.path.join(source_location,f), se, overwrite=overwrite)
 					if not res['OK']:
-						gLogger.error('Failed to putAndRegister %s \nto %s \nwith message: %s' % (lfn, se, res['Message']))
-						upload_status=2
+						if f not in ff:
+							gLogger.error('Failed to putAndRegister %s \nto %s \nwith message: %s' % (lfn, se, res['Message']))
+							upload_status=2
+						else:
+							gLogger.error('Allowed failure to putAndRegister %s \nto %s \nwith message: %s.' % (lfn, se, res['Message']))
+					
 					elif res['Value']['Failed'].has_key(lfn):
-						gLogger.error('Failed to putAndRegister %s to %s' % (lfn, se))
-						upload_status=2
+						if f not in ff:
+							gLogger.error('Failed to putAndRegister %s to %s' % (lfn, se))
+							upload_status=2
+						else:
+							gLogger.error('Allowed failure to putAndRegister %s to %s.' % (lfn, se))
+					uploaded_files.update([f])
 
 	return upload_status
 

@@ -27,7 +27,7 @@ class FindLfns(object):
 			self.__lfns=lfnlist
 		except:
 			self.__lfns=[]
-		
+			
 
 
 	def next(self):

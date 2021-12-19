@@ -3,6 +3,7 @@ import subprocess
 import json
 import logging
 import tarfile
+import glob
 
 from jsub.error import BackendNotFoundError
 
@@ -69,7 +70,10 @@ class Dirac(Common):
 				message = 'Cannot find correspondent job on Dirac backend'			
 			if is_ok:
 				subjob_dir = os.path.join(parent_dir,str(sid))
+				if os.path.isdir(os.path.abspath(subjob_dir)):
+					os.system('rm -r %s'%os.path.abspath(subjob_dir))
 				res = os.system('mkdir -p %s'%subjob_dir)
+				
 				os.chdir(subjob_dir)
 				if res!=0:
 					is_ok = False
@@ -80,14 +84,13 @@ class Dirac(Common):
 						cmd += [str(backend_job_id)]
 						output = subprocess.check_output(cmd)
 						os.chdir(str(backend_job_id))
-						os.system('mkdir jsub_log')
 #						os.system('pwd')
 #						print('Unpacking log files of subjob %s:'%sid)
-						os.system('tar -xvf jsub_log.tar.gz -C jsub_log > /dev/null')
+						os.system('tar -xvf jsub_log.tar.gz  > /dev/null')
 #						print('')
 						os.chdir('../')
-						os.system('mv `find ./*/ |grep launcher` ./')
-						os.system('mv `find ./*/ |grep navigator` ./')
+						os.system('find ./*/ |grep launcher > tmp_logfile_dir;dirname `cat tmp_logfile_dir` >tmp_logfile_dir;mv `cat tmp_logfile_dir`/* . >> /dev/null;rm bootstrap* tmp_logfile*')
+#						os.system('mv `find ./*/ |grep navigator` ./')
 						os.system('rm -rf %s'%backend_job_id)
 					except subprocess.CalledProcessError as e:
 						self._logger.error('Failed to retrieve log files of subjob %s, with the following message:'%str(sid))

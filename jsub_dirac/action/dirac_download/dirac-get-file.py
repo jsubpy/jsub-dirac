@@ -76,18 +76,24 @@ def main():
 
 	# download the file to the action folder
 	file_downloaded=False
-	if str(use_xcache).upper()=='True': #try to download file from xcache
-		sitename = DIRAC.siteName()
+	sitename = DIRAC.siteName()
+	if str(use_xcache).upper()=='True': #try to download file with xcache
 		for XCache in gConfig.getValue( 'Resources/XCaches/%s' % ( sitename ), [] ):
 			xrdcp_url='xroot://%s/%s'%(XCache,test_pfn) 
 			fname=os.path.basename(test_pfn)
-			cmd='xrdcp %s %s'%(test_pfn,fname)
+			cmd='xrdcp %s %s'%(xrdcp_url,fname)
+	else:		# simple xrdcp
+		sitename = DIRAC.siteName()
+		cmd='xrdcp %s %s'%(lfn,fname)
 		
-			proc = subprocess.Popen(cmd, shell=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE, timeout=3600)
-			return_code = proc.wait()
-			#proc.stdout, proc.stderr
-			if return_code==0:
-				file_downloaded=True
+	print("executing cmd: %s"%cmd)
+#	proc = subprocess.Popen(cmd, shell=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE, timeout=3600)  # timeout invalid in python 2
+	proc = subprocess.Popen(cmd, shell=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+	return_code = proc.wait()
+	#proc.stdout, proc.stderr
+	if return_code==0:
+		file_downloaded=True
+		print("Successfully downloaded file: %s"%fname)
 
 	if not file_downloaded: #use dirac API to download file
 		dirac = Dirac()
@@ -109,7 +115,8 @@ def main():
 
 
 	# mv to destination
-	os.system('mv %s %s'%(fname, destination))
+	if not (os.path.samefile(fname,destination) or os.path.exists(os.path.join('./',os.path.basename(fname))) ):
+		os.system('mv %s %s'%(fname, destination))
 
 	return 0
 
