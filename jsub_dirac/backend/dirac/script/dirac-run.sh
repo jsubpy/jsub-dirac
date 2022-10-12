@@ -1,12 +1,12 @@
 #!/bin/sh
 
-if [ -z "$DIRAC" ]; then
+if [ -z "$DIRACOS" ]; then
   >&2 echo 'DIRAC environment is not set!'
   exit 1
 fi
 
 
-source "$DIRAC/bashrc"
+source "$DIRACOS/diracosrc"
 
 cur_dir=$(dirname $0)
 
